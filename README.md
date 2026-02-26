@@ -82,12 +82,12 @@ println("Samples used: ", samples_used(RD))
 - `X`: sampling function
 - `P`: permutation-level properties (filters on sampled permutations)
 - `Q`: group-level properties
-- `n`: degree
-- `p_bound`: upper bound on noise rate $p$
+- `n`: degree of group
+- `p_bound`: upper bound on error rate $p$ 
 - `order_bound`: upper bound on $|G|$
-- `B_bound`: upper bound on constrained sample mass
-- `n_samples`: total samples consumed
-- `min_supergroup`: current supergroup placeholder
+- `B_bound`: 
+- `n_samples`: total samples used
+- `min_supergroup`: current minimal supergroup
 
 Useful mutators include:
 - `reset_sample_count!`, `reset_P!`, `reset_Q!`, `reset_all!`
