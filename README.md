@@ -6,7 +6,7 @@ The package models an error-prone sampler that returns:
 - an element of the target group $G$ with probability $1-p$,
 - a random element of $S_n$ with error probability $p$.
 
-It provides statistical tests and recovery routines based on the Group Recovery NiAGRA workflow, to recover the underlying group G with arbitrarily high confidence. 
+It provides statistical tests and recovery routines based on the Group Recovery NiAGRA workflow, to recover the underlying group G with arbitrarily high confidence. This package is described in "How To Recover a Permutation Group Amidst Errors" by Taylor Brysiewicz and Juhee Kim.
 
 ## Features
 
