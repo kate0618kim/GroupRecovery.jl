@@ -103,7 +103,6 @@ Useful mutators include:
 ## Notes
 
 - Many routines are probabilistic and depend on confidence parameters such as `alpha`.
-- Results are sensitive to the quality of `p_bound`, `order_bound`, and `B_bound`.
 
 ## Source
 
