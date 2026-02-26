@@ -23,10 +23,6 @@ export
     update_all_bounds, 
     add_permutation_property,
     add_group_property,
-    NaiveGroupRecovery,
-    Q_ErrorDetection,
-    NiAGRA,
-    main_group_recovery,
     ############### STATISTICAL TESTS & METHODS ###########
     success_rate_check,
     ############## MAIN TESTS ##############
@@ -41,7 +37,11 @@ export
     single_orbit_confirmation,
     orbit_confirmation,
     find_supergroup,
-    ############## helper functions ##########
+    NaiveGroupRecovery,
+    Q_ErrorDetection,
+    NiAGRA,
+    main_group_recovery,
+    ############## helper functions (delete) ##########
     is_giant,
     giant_pair,
     lower_if_giant,
@@ -298,6 +298,10 @@ end
 
 
 ################### STATISTICAL TESTS & BOUNDS ####################
+
+function Mtilde(RD::RecoveryDatum)
+    Mtilde = Int(ceil(log2(RD.order_bound)))
+end
 
 # lower bound on φ_k(G) given an upper bound M on ceil(log2(|G|)). If conservative=true, use the conservative bound from Pak's paper (this is the bound used in the RecoveringPermutationGroups paper). If conservative=false, then use the tighter bound that is equal to φ_k(Z_2^M)
 function pak_bound(M::Int64, k; conservative=false)
@@ -729,7 +733,8 @@ function subgroup_test(RD::RecoveryDatum, H::PermGroup; alpha=0.01, method = :ho
             add_group_property(RD, is_subgroup_of(H))
             if order(H) < RD.order_bound
                 update_order_bound(RD, BigInt(order(H)))
-                update_B_bound(RD, Float64(RD.order_bound)/factorial(big(degree(RD))))
+                new_B_bound = Float64(BigFloat(RD.order_bound) / BigFloat(factorial(big(degree(RD)))))
+                update_B_bound(RD, new_B_bound)
             end
         end
         return true
@@ -740,14 +745,6 @@ end
 
 
 
-#=
-#add specific perm property that g ∈ H and also update bounds of rd
-function add_subgroup_permutation_property(RD::RecoveryDatum, H::PermGroup)
-    update_order_bound(RD, BigInt(order(H)))
-    update_B_bound(RD, 1/Int( index(symmetric_group(degree(RD)), H ) ))
-end
-=#
-
 
 ################## ALTERNATING TEST ####################
 
@@ -756,15 +753,18 @@ function alternating_test(RD::RecoveryDatum; alpha=0.01, method = :hoeffding)
     p = RD.p_bound
     upper_for_low = (1-p)/2 + p/2
     lower_for_high = (1-p)+p/2
+    perm_property = is_even
+    subgroup_sample = () -> sample_has_property(RD, perm_property)
     category = nothing
-    #perm_property = is_even
 
     if method == :hoeffding
-        category = HoeffdingDistinguisher(() -> sample_has_property(RD, is_even), upper_for_low, lower_for_high, alpha)
+        category = HoeffdingDistinguisher(subgroup_sample, upper_for_low, lower_for_high, alpha)
     elseif method == :explicit
-        category = explicit_distinguisher(() -> sample_has_property(RD, is_even), upper_for_low, lower_for_high, alpha)
+        category = explicit_distinguisher(subgroup_sample, upper_for_low, lower_for_high, alpha)
+    elseif method == :sprt
+        category = SPRT_distinguisher(subgroup_sample, upper_for_low, lower_for_high, alpha)
     else
-        error("Unknown method: $method. Use :hoeffding or :explicit")
+        error("Unknown method: $method. Use :hoeffding, :explicit, or :sprt")
     end
     if category == :high
         return true
@@ -778,12 +778,9 @@ end
 ################### TRANSITIVITY TESTS  ####################
 #c= 1 + (1-p)*2 + p 
 
-# expected vallue of Fix_k(X) if G is k-transitive is 1, while if G is not k-transitive, the expected value is at least (1-p)*2 +p = 2-p
-
 function P(n,k) #n!/(n-k)!
     return prod([n:-1:n-k+1;])
 end
-
 
 function fixed_points(g::PermGroupElem, L::Vector{Int64})
     return count(i->g(i)==i, L)
@@ -822,11 +819,14 @@ function fixed_ktuples_sample(RD::RecoveryDatum, k::Int64)
     return fixed_ktuples_sample(RD, k, [1:degree(RD);])
 end
 
-
+"""
+    ktransitivity_test(RD::RecoveryDatum, k::Int; L=[1:degree(RD);], alpha=0.01, method = :hoeffding)
+Tests whether the unknown group G sampled by the recovery datum RD is k-transitive with confidence level at least 1-alpha. If the test concludes that G is k-transitive, it returns true; otherwise it returns false. The test is based on the number of fixed k-tuples in a sample from RD, and the expected number of fixed k-tuples in a  k-transitive group.  
+"""
 function ktransitivity_test(RD::RecoveryDatum, k::Int; L=[1:degree(RD);], alpha=0.01, method = :hoeffding)
-     @assert k<=length(L) "the provided `k` exceeds the size of the set the group is acting on"
-    upper_for_low=1
-    lower_for_high=2- RD.p_bound
+    @assert k<=length(L) "the provided `k` exceeds the size of the set the group is acting on"
+    upper_for_low=1.0
+    lower_for_high=2.0- RD.p_bound
     category = nothing
     max_rv_val=P(length(L), k)
 
@@ -840,10 +840,12 @@ function ktransitivity_test(RD::RecoveryDatum, k::Int; L=[1:degree(RD);], alpha=
             max_rv_val= max_rv_val, 
             boolean_valued=false, 
             delta = (1- RD.p_bound)/(2*max_rv_val))
-    #elseif method == :explicit
-        #category = explicit_distinguisher(() -> fixed_ktuples_sample(RD, k), upper_for_ktransitive, lower_for_nonktransitive, alpha)
+    elseif method == :explicit
+        category = explicit_distinguisher(() -> fixed_ktuples_sample(RD, k, L), upper_for_ktransitive, lower_for_nonktransitive, alpha)
+    elseif method == :sprt
+        category = SPRT_distinguisher(() -> fixed_ktuples_sample(RD, k, L), upper_for_low, lower_for_high, alpha, min_rv_val=0, max_rv_val=max_rv_val)
     else
-        error("Unknown method: $method. Use :hoeffding or :explicit")
+        error("Unknown method: $method. Use :hoeffding, :explicit, or :sprt")
     end 
 
     if category == :high 
@@ -869,7 +871,10 @@ function smallest_divisor(n::Int64)
     return n
 end
 
-#include checking if n is prime?
+"""
+    transitivity_test(RD::RecoveryDatum; L=[1:degree(RD);], alpha=0.01, method = :hoeffding, update = false)
+Tests whether the unknown group G sampled by the recovery datum RD is transitive with confidence level at least 1-alpha. If the test concludes that G is transitive, it returns true; otherwise it returns false. If update the group properties and bounds of RD accordingly.    
+"""
 function transitivity_test(RD::RecoveryDatum; L=[1:degree(RD);], alpha=0.01, method = :hoeffding, update = false)
     result=ktransitivity_test(RD, 1; L=L, alpha=alpha, method = method)
     #assuming we know G is non-giant
@@ -879,13 +884,13 @@ function transitivity_test(RD::RecoveryDatum; L=[1:degree(RD);], alpha=0.01, met
             add_group_property(RD, is_transitive)
             if is_prime(n) #G is primitive
                 update_order_bound(RD, 4^n)
-                #update_B_bound(RD, 4^n/factorial(big(n)))
+                update_B_bound(RD, 4^n/factorial(big(n)))
                 add_group_property(RD, is_primitive)
             else
                 l=smallest_divisor(n) #smallest prime divisor
                 
                 update_order_bound(RD, BigInt((n/l)*factorial(l)*factorial(Int(n/l))^l))
-                #update_B_bound(RD, Float64(RD.order_bound/factorial(big(n))))
+                update_B_bound(RD, Float64(RD.order_bound/factorial(big(n))))
             end
         end
         return true
@@ -893,7 +898,7 @@ function transitivity_test(RD::RecoveryDatum; L=[1:degree(RD);], alpha=0.01, met
         if update == true
             add_group_property(RD, !is_transitive)
             update_order_bound(RD, factorial(big(n-1)))
-            #update_B_bound(RD, 1/n)
+            update_B_bound(RD, 1/n)
         end
         return false
     end
@@ -1147,7 +1152,7 @@ end
     find_supergroup(RD::RecoveryDatum; Qbar, update=false)
 Attempts to find a supergroup H of the unknown group G sampled by RD such that H satisfies every property in Qbar (a list of group properties that are known to hold for every supergroup of G, e.g., being transitive, the minimal order). If such a group H is found, it is returned.
 """
-function find_supergroup(RD::RecoveryDatum; Qbar = Vector{Function}(), alpha=0.1)
+function find_supergroup(RD::RecoveryDatum; Qbar = Vector{Function}(), alpha=0.1, update=true)
     gens = Vector{PermGroupElem}()
     n = degree(RD)
     start_samples = RD.n_samples
@@ -1156,10 +1161,10 @@ function find_supergroup(RD::RecoveryDatum; Qbar = Vector{Function}(), alpha=0.1
         push!(gens, sample(RD))
         H = permutation_group(n, gens)
         if all(q(H) for q in Qbar)
-            if subgroup_test(RD, H, alpha=alpha, update = false) == true
+            if subgroup_test(RD, H, alpha=alpha, update = update) == true
                 found = true
                 println("\nSupergroup generated by ", length(gens), " samples.")
-                return H, RD.n_samples - start_samples
+                return H#, RD.n_samples - start_samples
             end
         else
             continue
@@ -1508,6 +1513,8 @@ function main_group_recovery(RD::RecoveryDatum; alpha=0.01, method = :hoeffding)
             verbose && println("Checking success rate:")
 
             success_rate=success_rate_check(RD, Mtilde(RD)+4)
+
+            find_supergroup(RD, update=true)
 
             if success_rate<0.5
                 println("\nSuccess rate too low, must find more properties or improve bounds")
